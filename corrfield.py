@@ -160,9 +160,11 @@ def corrfield_with_ablation(img_fix, mask_fix, img_mov, ablation_mask, alpha, be
                         kpts_fix.view(1, 1, 1, -1, 3), 
                         align_corners=True).view(1, 3, -1).permute(0, 2, 1)
     
+    # Return dense_flow in addition to other outputs
     return (img_mov_warped, 
             kpts_world(kpts_fix, (D, H, W), align_corners=True), 
-            kpts_world(kpts_fix + flow, (D, H, W), align_corners=True))
+            kpts_world(kpts_fix + flow, (D, H, W), align_corners=True),
+            dense_flow)  # Add this to return values
 
 def main(args):
     print('Run corrField registration ...')
@@ -220,18 +222,18 @@ def main(args):
     torch.cuda.synchronize()
     t0 = time.time()
     
-    img_mov_warped, kpts_fix, kpts_mov_corr = corrfield_with_ablation(
+    img_mov_warped, kpts_fix, kpts_mov_corr, dense_flow = corrfield_with_ablation(
         img_fix, mask_fix, img_mov, ablation_mask,
         alpha, beta, gamma, delta, lambd, sigma, sigma1,
         L, N, Q, R, T,
         border_dist=border_dist,
         border_density=border_density
     )
-    
+    print('Dense flow shape is: ', dense_flow.shape)
     torch.cuda.synchronize()
     t1 = time.time()
     
-    # Save results
+    # Save original outputs
     np.savetxt('{}.csv'.format(output_path), 
                torch.cat([kpts_fix[0], kpts_mov_corr[0]], dim=1).cpu().numpy(), 
                delimiter=",", fmt='%.3f')
@@ -240,7 +242,38 @@ def main(args):
                             nib.load(img_fix_path).affine), 
              '{}.nii.gz'.format(output_path))
     
-    print('Files {}.csv and {}.nii.gz written.'.format(output_path, output_path))
+    print('Files written:')
+    print('  {}.csv'.format(output_path))
+    print('  {}.nii.gz'.format(output_path))
+    
+    if args.save_deformation:
+    
+        # Compute and save deformation field components
+        magnitude, dx, dy, dz = compute_deformation_components(dense_flow)
+        
+        # Save magnitude
+        nib.save(nib.Nifti1Image(magnitude, 
+                                nib.load(img_fix_path).affine), 
+                '{}_deformation_magnitude.nii.gz'.format(output_path))
+        
+        # Save components
+        nib.save(nib.Nifti1Image(dx, 
+                                nib.load(img_fix_path).affine), 
+                '{}_deformation_x.nii.gz'.format(output_path))
+        
+        nib.save(nib.Nifti1Image(dy, 
+                                nib.load(img_fix_path).affine), 
+                '{}_deformation_y.nii.gz'.format(output_path))
+        
+        nib.save(nib.Nifti1Image(dz, 
+                                nib.load(img_fix_path).affine), 
+                '{}_deformation_z.nii.gz'.format(output_path))
+        
+        print('  {}_deformation_magnitude.nii.gz'.format(output_path))
+        print('  {}_deformation_x.nii.gz'.format(output_path))
+        print('  {}_deformation_y.nii.gz'.format(output_path))
+        print('  {}_deformation_z.nii.gz'.format(output_path))
+    
     print('Total computation time: {:.1f} s'.format(t1-t0))
     print()
 
@@ -257,6 +290,8 @@ if __name__ == "__main__":
                         help="binary mask of ablation zone in moving image (*.nii/*.nii.gz)")
     parser.add_argument('-O', '--output', required=True,
                         help="output name (no filename extension)")
+    parser.add_argument('--save_deformation', action='store_true', default=False,
+                        help="Generate and save deformation field files (default: False)")
 
     parser.add_argument('-a', '--alpha', default=2.5,
                         help="regularisation parameter (default: 2.5)")

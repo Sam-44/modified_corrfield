@@ -108,3 +108,26 @@ def compute_rigid_transform(kpts_fixed, kpts_moving, iter=5):
         residual = torch.sqrt(torch.sum(torch.pow(kpts_moving[0] - torch.mm(kpts_fixed[0], x), 2), 1))
         _, idx = torch.topk(residual, kpts_fixed.shape[1]//2, largest=False)
     return x.t().unsqueeze(0)
+
+def compute_deformation_components(dense_flow):
+    """
+    Compute magnitude and component-wise deformation fields.
+    
+    Args:
+        dense_flow: Dense deformation field tensor of shape [1, D, H, W, 3]
+        
+    Returns:
+        tuple: (magnitude, dx, dy, dz) numpy arrays
+    """
+    # Convert to numpy and squeeze
+    flow = dense_flow.cpu().numpy()[0]
+    
+    # Compute components (in world coordinates)
+    dx = flow[..., 0]
+    dy = flow[..., 1]
+    dz = flow[..., 2]
+    
+    # Compute magnitude
+    magnitude = np.sqrt(dx**2 + dy**2 + dz**2)
+    
+    return magnitude, dx, dy, dz
