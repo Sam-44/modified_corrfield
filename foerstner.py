@@ -36,6 +36,7 @@ def invert_structure_tensor(struct):
     return struct_inv
 
 def foerstner_kpts(img, mask, sigma=1.4, d=9, thresh=1e-8):
+    """Original Foerstner keypoint detection - kept for backward compatibility"""
     _, _, D, H, W = img.shape
     device = img.device
     
@@ -63,9 +64,88 @@ def foerstner_kpts(img, mask, sigma=1.4, d=9, thresh=1e-8):
                                        [0,  1,  0],
                                        [0,  0,  0]]], device=device)
     
- 
     mask_eroded = (1 - F.conv3d(1 - mask.float(), structure_element.unsqueeze(0).unsqueeze(0), padding=1).clamp_(0, 1)).bool()
     
     kpts = torch.nonzero(mask_eroded & (maxfeat == distinctiveness) & (distinctiveness >= thresh)).unsqueeze(0)[:, :, 2:]
+    
+    return kpts_pt(kpts, (D, H, W), align_corners=True)
+
+def foerstner_kpts_with_exclusion(img, mask_fix, ablation_mask, sigma=1.4, d=9, thresh=1e-8, border_dist=10, border_density=2):
+    """
+    Modified Förstner keypoint detection that excludes points in ablation zone 
+    and increases density near borders.
+    
+    Parameters:
+    - img: Input image tensor
+    - mask_fix: Original mask for valid regions
+    - ablation_mask: Binary mask of ablation zone
+    - sigma: Sigma for structure tensor
+    - d: Non-maximum suppression window size
+    - thresh: Threshold for distinctiveness
+    - border_dist: Distance from ablation border to increase density (in voxels)
+    - border_density: Factor to increase keypoint density near borders
+    """
+    _, _, D, H, W = img.shape
+    device = img.device
+    
+    # Compute gradients and structure tensor as in original
+    filt = torch.tensor([1.0 / 12.0, -8.0 / 12.0, 0.0, 8.0 / 12.0, -1.0 / 12.0], device=device)
+    grad = torch.cat([filter1D(img, filt, 0),
+                     filter1D(img, filt, 1),
+                     filter1D(img, filt, 2)], dim=1)
+    
+    struct_inv = invert_structure_tensor(structure_tensor(grad, sigma))
+    distinctiveness = 1. / (struct_inv[:, 0, ...] + struct_inv[:, 3, ...] + struct_inv[:, 5, ...]).unsqueeze(1)
+    
+    # Create border region mask using morphological operations
+    border_region = torch.zeros_like(ablation_mask)
+    for i in range(1, border_dist + 1):
+        # Dilate ablation mask
+        dilated = F.max_pool3d(ablation_mask.float(), 
+                              kernel_size=2*i+1, 
+                              stride=1, 
+                              padding=i)
+        # Get border region for this distance
+        border_region = torch.logical_or(border_region, 
+                                       torch.logical_and(dilated > 0, 
+                                                       ablation_mask == 0))
+    
+    # Modify distinctiveness based on regions
+    distinctiveness = torch.where(ablation_mask > 0, 
+                                torch.zeros_like(distinctiveness),  # Zero inside ablation
+                                distinctiveness)  # Original elsewhere
+    
+    distinctiveness = torch.where(border_region > 0,
+                                distinctiveness * border_density,  # Increase near border
+                                distinctiveness)  # Original elsewhere
+    
+    # Non-maximum suppression
+    pad1 = d//2
+    pad2 = d - pad1 - 1
+    maxfeat = F.max_pool3d(F.pad(distinctiveness, 
+                                (pad2, pad1, pad2, pad1, pad2, pad1)), 
+                          d, stride=1)
+    
+    # Update original mask to exclude ablation zone
+    mask_valid = torch.logical_and(mask_fix, ablation_mask == 0)
+    
+    structure_element = torch.tensor([[[0., 0,  0],
+                                     [0,  1,  0],
+                                     [0,  0,  0]],
+                                    [[0,  1,  0],
+                                     [1,  0,  1],
+                                     [0,  1,  0]],
+                                    [[0,  0,  0],
+                                     [0,  1,  0],
+                                     [0,  0,  0]]], device=device)
+    
+    mask_eroded = (1 - F.conv3d(1 - mask_valid.float(), 
+                               structure_element.unsqueeze(0).unsqueeze(0), 
+                               padding=1).clamp_(0, 1)).bool()
+    
+    # Get keypoints
+    kpts = torch.nonzero(mask_eroded & 
+                        (maxfeat == distinctiveness) & 
+                        (distinctiveness >= thresh)).unsqueeze(0)[:, :, 2:]
     
     return kpts_pt(kpts, (D, H, W), align_corners=True)
