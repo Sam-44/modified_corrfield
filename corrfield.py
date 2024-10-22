@@ -229,7 +229,7 @@ def main(args):
         border_dist=border_dist,
         border_density=border_density
     )
-    print('Dense flow shape is: ', dense_flow.shape)
+
     torch.cuda.synchronize()
     t1 = time.time()
     
