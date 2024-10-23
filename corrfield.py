@@ -238,6 +238,11 @@ def main(args):
                torch.cat([kpts_fix[0], kpts_mov_corr[0]], dim=1).cpu().numpy(), 
                delimiter=",", fmt='%.3f')
     
+    np.save('{}_keypoints_fixed.npy'.format(output_path), 
+            kpts_fix.cpu().numpy())
+    np.save('{}_keypoints_moving.npy'.format(output_path), 
+            kpts_mov_corr.cpu().numpy())
+    
     nib.save(nib.Nifti1Image(np.squeeze(img_mov_warped.cpu().numpy()), 
                             nib.load(img_fix_path).affine), 
              '{}.nii.gz'.format(output_path))

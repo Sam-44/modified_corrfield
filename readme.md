@@ -61,6 +61,7 @@ python corrfield.py -F fixed.nii.gz \
                    -m mask.nii.gz \
                    -A ablation_mask.nii.gz \
                    -O output \
+                   [--save_deformation] \
                    [-bd BORDER_DIST] \
                    [-bf BORDER_DENSITY]
 ```
@@ -73,6 +74,7 @@ python corrfield.py -F fixed.nii.gz \
 - `-O, --output`: Output name prefix (no filename extension)
 
 #### Optional Arguments:
+- `--save_deformation`: Generate and save deformation field files (default: False)
 - `-bd, --border_dist`: Distance from ablation border to increase density (default: 10)
 - `-bf, --border_density`: Factor to increase keypoint density near borders (default: 2.0)
 - (All other original CorrField parameters remain available)
@@ -83,9 +85,55 @@ python corrfield.py -F fixed.nii.gz \
 - Moving image (pre-ablation CT) can have different dimensions
 
 ### Outputs
-- Warped pre-ablation CT scan
-- CSV file with correspondence points
-- Registration transform
+- `output.nii.gz`: Warped pre-ablation CT scan
+- `output.csv`: Correspondence points
+- `output_keypoints_fixed.npy`: Fixed keypoints for visualization
+- `output_keypoints_moving.npy`: Moving keypoints for visualization
+- When `--save_deformation` is used:
+  - `output_deformation_magnitude.nii.gz`: Magnitude of deformation field
+  - `output_deformation_x.nii.gz`: X component of deformation field
+  - `output_deformation_y.nii.gz`: Y component of deformation field
+  - `output_deformation_z.nii.gz`: Z component of deformation field
+
+## Keypoint Visualization
+
+A separate visualization tool (`keypoint_viewer.py`) is provided to inspect the registration results and keypoint placement:
+
+```bash
+python keypoint_viewer.py \
+    --fixed_image fixed.nii.gz \
+    --moving_image moving.nii.gz \
+    --ablation_mask ablation_mask.nii.gz \
+    --fixed_keypoints output_keypoints_fixed.npy \
+    --moving_keypoints output_keypoints_moving.npy \
+    --axis z \
+    --slice_thickness 1
+```
+
+### Visualization Features:
+- Side-by-side view of fixed and moving images
+- Interactive slice navigation with slider and keyboard controls
+- Keypoint overlay on respective images
+  - Fixed keypoints shown as green dots
+  - Moving keypoints shown as red plus signs
+- Ablation zone overlay in semi-transparent yellow
+- Images rotated 270 degrees clockwise for standard radiological view
+- Adjustable slice thickness for keypoint visibility
+
+### Keypoint Viewer Arguments:
+- `--fixed_image`: Path to fixed (post-ablation) scan
+- `--moving_image`: Path to moving (pre-ablation) scan
+- `--ablation_mask`: Path to ablation mask
+- `--fixed_keypoints`: Path to fixed keypoints (.npy file)
+- `--moving_keypoints`: Path to moving keypoints (.npy file)
+- `--axis`: Viewing axis (x, y, or z; default: z)
+- `--slice_thickness`: Show points within ±N slices (default: 1)
+
+### Interactive Controls:
+- Slider: Manual slice selection
+- Arrow keys: Navigate slices (up/right = next, down/left = previous)
+- Mouse click: Select which image to control with keyboard
+- Each image has its own slice slider for independent navigation
 
 ## Parameter Guidelines
 
@@ -108,21 +156,32 @@ python corrfield.py -F fixed.nii.gz \
 
 ## Example Usage
 ```bash
-# Basic usage with default border parameters
+# Basic registration with keypoint saving
 python corrfield.py -F post_ablation.nii.gz \
                    -M pre_ablation.nii.gz \
                    -m lung_mask.nii.gz \
                    -A ablation_mask.nii.gz \
                    -O registered_output
 
-# Usage with custom border parameters
+# Registration with deformation field saving and custom border parameters
 python corrfield.py -F post_ablation.nii.gz \
                    -M pre_ablation.nii.gz \
                    -m lung_mask.nii.gz \
                    -A ablation_mask.nii.gz \
                    -O registered_output \
+                   --save_deformation \
                    -bd 15 \
                    -bf 2.5
+
+# Keypoint visualization
+python keypoint_viewer.py \
+    --fixed_image post_ablation.nii.gz \
+    --moving_image pre_ablation.nii.gz \
+    --ablation_mask ablation_mask.nii.gz \
+    --fixed_keypoints registered_output_keypoints_fixed.npy \
+    --moving_keypoints registered_output_keypoints_moving.npy \
+    --axis z \
+    --slice_thickness 1
 ```
 
 ## Implementation Notes
@@ -130,4 +189,3 @@ python corrfield.py -F post_ablation.nii.gz \
 - Border region is computed using morphological operations
 - Keypoint selection is modified only in and around the ablation zone
 - Original registration behavior is maintained in regions away from the ablation zone
-
